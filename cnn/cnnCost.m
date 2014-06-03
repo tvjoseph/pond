@@ -72,6 +72,8 @@ activations = zeros(convDim,convDim,numFilters,numImages);
 activationsPooled = zeros(outputDim,outputDim,numFilters,numImages);
 
 %%% YOUR CODE HERE %%%
+activations = cnnConvolve(filterDim, numFilters, images, Wc, bc);
+activationsPooled = cnnPool(poolDim, activations);
 
 % Reshape activations into 2-d matrix, hiddenSize x numImages,
 % for Softmax layer
@@ -88,6 +90,8 @@ activationsPooled = reshape(activationsPooled,[],numImages);
 probs = zeros(numClasses,numImages);
 
 %%% YOUR CODE HERE %%%
+probs = Wd * activationsPooled + repmat(bd, [1 numImages]);
+probs = sigmf(probs, [1 0]);
 
 %%======================================================================
 %% STEP 1b: Calculate Cost
@@ -98,6 +102,11 @@ probs = zeros(numClasses,numImages);
 cost = 0; % save objective into cost
 
 %%% YOUR CODE HERE %%%
+lamda = 3e-3;
+results = full(sparse(labels, 1:numImages, 1));
+errors = probs - results;
+cost = sum(errors(:) .^ 2) ./ 2 ./ numImages;
+cost = cost + (sum(Wc(:) .^ 2) + sum(Wd(:) .^ 2)) * lamda ./ 2;
 
 % Makes predictions given probs and returns without backproagating errors.
 if pred
@@ -118,6 +127,18 @@ end;
 %  quickly.
 
 %%% YOUR CODE HERE %%%
+delta_sm = errors .* probs .* (1 - probs);
+delta_pl = Wd' * delta_sm;
+delta_pl_rs = reshape(delta_pl, outputDim, outputDim, numFilters, numImages);
+delta_cv = zeros(convDim, convDim, numFilters, numImages);
+for imageNum = 1:numImages
+  for filterNum = 1:numFilters
+      temp = delta_pl_rs(:, :, filterNum, imageNum);
+      temp = kron(squeeze(temp), ones(poolDim)) ./ (poolDim .^ 2);
+      delta_cv(:, :, filterNum, imageNum) = temp;
+  end
+end
+delta_cv = delta_cv .* activations .* (1 - activations);
 
 %%======================================================================
 %% STEP 1d: Gradient Calculation
@@ -128,6 +149,19 @@ end;
 %  for that filter with each image and aggregate over images.
 
 %%% YOUR CODE HERE %%%
+Wd_grad = delta_sm * activationsPooled' ./ numImages + lamda .* Wd;
+bd_grad = mean(delta_sm, 2);
+for imageNum = 1:numImages
+  image = images(:, :, imageNum);
+  for filterNum = 1:numFilters
+      convImage = delta_cv(:, :, filterNum, imageNum);
+      convFilter = conv2(image, rot90(convImage, 2), 'valid');
+      Wc_grad(:, :, filterNum) = Wc_grad(:, :, filterNum) + convFilter;
+      bc_grad(filterNum) = bc_grad(filterNum) + sum(convImage(:));
+  end
+end
+Wc_grad = Wc_grad ./ numImages + lamda .* Wc;
+bc_grad = bc_grad ./ numImages;
 
 %% Unroll gradient into grad vector for minFunc
 grad = [Wc_grad(:) ; Wd_grad(:) ; bc_grad(:) ; bd_grad(:)];
