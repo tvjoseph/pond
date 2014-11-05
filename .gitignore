@@ -1,0 +1,9 @@
+
+# ignore the files in folder res
+res/
+
+# ignore .pyc
+*.pyc
+
+# ignore hidden folders or files
+.*
